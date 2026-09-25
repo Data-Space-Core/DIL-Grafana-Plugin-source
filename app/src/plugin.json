@@ -1,0 +1,46 @@
+{
+  "type": "app",
+  "name": "DIL Dashboard Sharing",
+  "id": "dataspacelab-dil-dashboard-app",
+  "backend": true,
+  "executable": "gpx_dil_share",
+  "autoEnabled": false,
+  "includes": [
+    {
+      "type": "page",
+      "name": "Dashboard sharing",
+      "path": "/a/dataspacelab-dil-dashboard-app",
+      "addToNav": true,
+      "defaultNav": true,
+      "role": "Editor"
+    },
+    {
+      "type": "page",
+      "name": "Configuration",
+      "path": "/a/dataspacelab-dil-dashboard-app/config",
+      "addToNav": false,
+      "role": "Admin"
+    }
+  ],
+  "extensions": {
+    "addedLinks": [
+      {
+        "title": "Share dashboard via DIL",
+        "description": "Export or publish this dashboard as a portable DIL document",
+        "targets": ["grafana/dashboard/panel/menu"]
+      }
+    ]
+  },
+  "info": {
+    "description": "Provider-side portable Grafana dashboard sharing through DIL",
+    "author": {"name": "Data Space Lab"},
+    "keywords": ["dataspace", "DIL", "dashboard"],
+    "logos": {"small": "img/logo.svg", "large": "img/logo.svg"},
+    "version": "0.1.0",
+    "updated": "2026-09-25"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=13.0.1",
+    "plugins": []
+  }
+}

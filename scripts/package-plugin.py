@@ -8,18 +8,22 @@ from pathlib import Path
 
 
 TARGETS = ("linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64", "windows_amd64.exe")
+PLUGINS = {
+    "dataspacelab-dil-datasource": "gpx_dil_",
+    "dataspacelab-dil-dashboard-app": "gpx_dil_share_",
+}
 
 
-def package(root):
-    metadata = json.loads((root / "package.json").read_text())
-    manifest = json.loads((root / "dist/plugin.json").read_text())
+def package_one(root, plugin_id, binary_prefix):
+    source = root / "dist" / plugin_id
+    manifest = json.loads((source / "plugin.json").read_text())
     plugin_id, version = manifest["id"], manifest["info"]["version"]
-    if plugin_id != metadata["name"] or version != metadata["version"]:
-        raise ValueError("Plugin ID/version must match package.json")
+    if plugin_id not in PLUGINS:
+        raise ValueError("Unexpected plugin ID")
     if manifest["dependencies"]["grafanaDependency"] != ">=13.0.1":
         raise ValueError("Unexpected Grafana compatibility range")
-    files = [root / "dist/module.js", root / "dist/plugin.json"]
-    files += [root / "dist" / ("gpx_dil_" + target) for target in TARGETS]
+    files = [source / "module.js", source / "plugin.json"]
+    files += [source / (binary_prefix + target) for target in TARGETS]
     for file in files:
         if not file.is_file() or not file.stat().st_size:
             raise ValueError(f"Missing or empty plugin file: {file.name}")
@@ -27,8 +31,8 @@ def package(root):
     staging = output / plugin_id
     if staging.exists():
         shutil.rmtree(staging)
-    shutil.copytree(root / "dist", staging)
-    for binary in staging.glob("gpx_dil_*"):
+    shutil.copytree(source, staging)
+    for binary in staging.glob(binary_prefix + "*"):
         binary.chmod(0o755)
     archive = output / f"{plugin_id}-{version}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
@@ -38,7 +42,7 @@ def package(root):
             entry = zipfile.ZipInfo(path.relative_to(output).as_posix(), (1980, 1, 1, 0, 0, 0))
             entry.create_system = 3
             entry.compress_type = zipfile.ZIP_DEFLATED
-            mode = 0o755 if path.name.startswith("gpx_dil_") else 0o644
+            mode = 0o755 if path.name.startswith(binary_prefix) else 0o644
             entry.external_attr = (stat.S_IFREG | mode) << 16
             bundle.writestr(entry, path.read_bytes())
     with archive.open("rb") as file:
@@ -46,6 +50,10 @@ def package(root):
     (output / (archive.name + ".sha256")).write_text(f"{checksum}  {archive.name}\n")
     print(archive)
     return archive
+
+
+def package(root):
+    return [package_one(root, plugin_id, prefix) for plugin_id, prefix in PLUGINS.items()]
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ interface Options extends DataSourceJsonData { connectorUrl: string; agreementId
 interface Secrets { connectorToken?: string }
 interface Query extends DataQuery { panelId: string; templateRef: string }
 interface Manifest { title: string; dashboardId: string; panels: Array<{id: number; title: string; type: string; queries: Array<{refId: string; panelId: string}>}> }
+interface SharedDashboard { type: string; title: string; dashboard: Record<string, unknown>; datasource: {pluginId: string; placeholder?: string}; requires?: {grafana?: string; plugin?: {id?: string; version?: string}}; integrity?: {algorithm?: string; dashboard?: string} }
 class DataSource extends DataSourceWithBackend<Query, Options> {
   constructor(settings: DataSourceInstanceSettings<Options>) { super(settings); }
 }
@@ -31,12 +32,48 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
     } catch (e) { setError(e instanceof Error ? e.message : 'Dashboard import failed; check the agreement and connector.'); }
     finally { setBusy(false); }
   };
+  const importSharedDocument = async (file?: File) => {
+    setBusy(true); setError(''); setImportUrl('');
+    try {
+      if (!file || !options.uid) { throw new Error('Save this datasource and select a DIL dashboard JSON file.'); }
+      const document = JSON.parse(await file.text()) as SharedDashboard;
+      if (document.type !== 'GrafanaDashboard' || document.datasource?.pluginId !== 'dataspacelab-dil-datasource' || !document.dashboard) {
+        throw new Error('The selected file is not a DIL GrafanaDashboard document.');
+      }
+      if (document.integrity?.dashboard) {
+        if (document.integrity.algorithm !== 'sha256') { throw new Error('The dashboard document uses an unsupported integrity algorithm.'); }
+        const canonicalize = (value: unknown): unknown => Array.isArray(value) ? value.map(canonicalize) : value && typeof value === 'object'
+          ? Object.fromEntries(Object.keys(value as Record<string, unknown>).sort().map(key => [key, canonicalize((value as Record<string, unknown>)[key])])) : value;
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonicalize(document.dashboard))));
+        const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        if (actual !== document.integrity.dashboard.toLowerCase()) { throw new Error('The dashboard document failed its integrity check.'); }
+      }
+      const placeholder = document.datasource.placeholder || '${DIL_DATASOURCE}';
+      const mapDatasource = (value: unknown): unknown => {
+        if (Array.isArray(value)) { return value.map(mapDatasource); }
+        if (value && typeof value === 'object') {
+          return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, mapDatasource(child)]));
+        }
+        return value === placeholder ? options.uid : value;
+      };
+      const dashboard = mapDatasource(document.dashboard) as Record<string, unknown>;
+      dashboard.id = null;
+      delete dashboard.uid;
+      delete dashboard.version;
+      const saved = await getBackendSrv().post('/api/dashboards/db', {dashboard, overwrite: false, message: 'Imported from a portable DIL dashboard document'});
+      setImportUrl(saved.url);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Shared dashboard import failed.'); }
+    finally { setBusy(false); }
+  };
   return <div style={{maxWidth: 720}}>
     {fields.map(([key, label]) => <Field label={label} key={String(key)}><Input value={String(options.jsonData[key] || '')} onChange={e => onOptionsChange({...options, jsonData: {...options.jsonData, [key]: e.currentTarget.value}})} /></Field>)}
     <Field label="Consumer dataplane token"><SecretInput value={options.secureJsonData?.connectorToken || ''} isConfigured={Boolean(options.secureJsonFields?.connectorToken)}
       onChange={e => onOptionsChange({...options, secureJsonData: {...options.secureJsonData, connectorToken: e.currentTarget.value}})}
       onReset={() => onOptionsChange({...options, secureJsonFields: {...options.secureJsonFields, connectorToken: false}, secureJsonData: {...options.secureJsonData, connectorToken: ''}})} /></Field>
     <Button icon="download-alt" onClick={importDashboard} disabled={busy}>{busy ? 'Importing...' : 'Import shared dashboard'}</Button>
+    <Field label="Import portable DIL dashboard JSON" description="Maps portable references to this saved DIL datasource instance.">
+      <Input type="file" accept="application/json,.json" disabled={busy} onChange={event => importSharedDocument(event.currentTarget.files?.[0])} />
+    </Field>
     {error && <Alert title="Import failed" severity="error">{error}</Alert>}
     {importUrl && <p><a href={importUrl}>Open imported dashboard</a></p>}
   </div>;

@@ -5,6 +5,8 @@ COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.json webpack.config.js ./
 COPY src ./src
+COPY app/src ./app/src
+COPY app/README.md ./app/README.md
 COPY README.md ./
 COPY docs ./docs
 RUN npm run typecheck && npm run build
@@ -15,7 +17,8 @@ COPY go.* ./
 RUN go mod download
 COPY pkg ./pkg
 COPY scripts/build-backend.sh ./scripts/build-backend.sh
-RUN --mount=type=cache,target=/root/.cache/go-build go test -mod=readonly ./pkg/...
+COPY app/pkg ./app/pkg
+RUN --mount=type=cache,target=/root/.cache/go-build go test -mod=readonly ./pkg/... ./app/pkg/...
 RUN --mount=type=cache,target=/root/.cache/go-build sh scripts/build-backend.sh /out
 
 FROM python:3.12-slim AS package

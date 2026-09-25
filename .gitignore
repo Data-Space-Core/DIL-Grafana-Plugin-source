@@ -1,0 +1,10 @@
+node_modules/
+dist/
+artifacts/
+artifacts-new/
+/*.zip
+.cache/
+.env
+__pycache__/
+*.pyc
+dataspacelab-dil-datasource/
