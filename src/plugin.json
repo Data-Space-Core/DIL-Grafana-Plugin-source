@@ -1,0 +1,6 @@
+{
+  "type": "datasource", "name": "DIL Dataspace", "id": "dataspacelab-dil-datasource",
+  "backend": true, "executable": "gpx_dil", "metrics": true, "alerting": false,
+  "info": {"description": "Agreement-authorized shared dashboards through DIL dataplanes", "author": {"name": "Data Space Lab"}, "keywords": ["dataspace", "DIL"], "logos": {"small": "img/logo.svg", "large": "img/logo.svg"}, "version": "0.2.0", "updated": "2026-09-25"},
+  "dependencies": {"grafanaDependency": ">=13.0.1", "plugins": []}
+}

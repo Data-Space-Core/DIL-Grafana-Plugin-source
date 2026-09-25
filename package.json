@@ -1,0 +1,7 @@
+{
+  "name": "dataspacelab-dil-datasource", "version": "0.2.0", "private": true,
+  "scripts": {"build": "webpack --mode production", "typecheck": "tsc --noEmit"},
+  "engines": {"node": ">=22 <25"},
+  "dependencies": {"@grafana/data": "13.0.1", "@grafana/runtime": "13.0.1", "@grafana/ui": "13.0.1", "react": "18.3.1", "react-dom": "18.3.1"},
+  "devDependencies": {"@types/react": "18.3.18", "typescript": "5.8.3", "ts-loader": "9.5.2", "webpack": "5.99.9", "webpack-cli": "6.0.1", "copy-webpack-plugin": "13.0.0"}
+}
