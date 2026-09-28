@@ -19,8 +19,8 @@ On a standard Linux package installation:
 
 ```bash
 cd artifacts
-sha256sum -c dataspacelab-dil-datasource-0.3.3.zip.sha256
-sudo unzip dataspacelab-dil-datasource-0.3.3.zip -d /var/lib/grafana/plugins
+sha256sum -c dataspacelab-dil-datasource-0.3.4.zip.sha256
+sudo unzip dataspacelab-dil-datasource-0.3.4.zip -d /var/lib/grafana/plugins
 sudo unzip dataspacelab-dil-dashboard-app-0.1.2.zip -d /var/lib/grafana/plugins
 sudo chown -R grafana:grafana /var/lib/grafana/plugins/dataspacelab-dil-datasource
 sudo chown -R grafana:grafana /var/lib/grafana/plugins/dataspacelab-dil-dashboard-app
@@ -68,7 +68,7 @@ environment:
 Alternatively, host the ZIP on a trusted HTTPS endpoint:
 
 ```text
-GF_PLUGINS_PREINSTALL_SYNC=dataspacelab-dil-datasource@0.3.3@https://YOUR-RELEASE-HOST/dataspacelab-dil-datasource-0.3.3.zip,dataspacelab-dil-dashboard-app@0.1.2@https://YOUR-RELEASE-HOST/dataspacelab-dil-dashboard-app-0.1.2.zip
+GF_PLUGINS_PREINSTALL_SYNC=dataspacelab-dil-datasource@0.3.4@https://YOUR-RELEASE-HOST/dataspacelab-dil-datasource-0.3.4.zip,dataspacelab-dil-dashboard-app@0.1.2@https://YOUR-RELEASE-HOST/dataspacelab-dil-dashboard-app-0.1.2.zip
 ```
 
 Replace the placeholder with the published artifact URL and append to any
@@ -93,6 +93,8 @@ Restrict datasource permissions: authorized Grafana users exercise its agreement
 Saved settings remain `connectorUrl` and secure `connectorToken` for
 compatibility, but refer to the **consumer dataplane**. Credentials do not belong
 in dashboard JSON. HTTP is disabled by default; `allowHttp: true` is lab-only.
+Documents downloaded from the DIL GUI may carry the deployment-provided
+consumer dataplane URL and this non-secret internal-HTTP setting automatically.
 
 Service setup is documented separately in
 `DIL-Connector-source/Dataplane/GRAFANA-INTEGRATION.md`. Optional deployment and

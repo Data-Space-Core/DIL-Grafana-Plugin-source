@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DataSourcePlugin, DataQuery, DataSourceJsonData, DataSourceInstanceSettings, DataSourcePluginOptionsEditorProps, QueryEditorProps } from '@grafana/data';
 import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
-import { Button, Input, Field, SecretInput, Alert, Select } from '@grafana/ui';
+import { Button, Input, Field, SecretInput, Alert, Select, Checkbox } from '@grafana/ui';
 
 interface Options extends DataSourceJsonData { connectorUrl: string; agreementId: string; datasetId: string; offerId: string; dashboardId: string; transferType?: string; allowHttp?: boolean }
 interface Secrets { connectorToken?: string }
@@ -12,7 +12,7 @@ interface SharedDashboard {
   title: string;
   dashboard: Record<string, unknown>;
   datasource: {pluginId: string; placeholder?: string};
-  dil?: {agreementId?: string; datasetId?: string; offerId?: string; dashboardId?: string; transferType?: string};
+  dil?: {agreementId?: string; datasetId?: string; offerId?: string; dashboardId?: string; transferType?: string; consumerDataplaneUrl?: string; allowHttp?: boolean};
   requires?: {grafana?: string; plugin?: {id?: string; version?: string}};
   integrity?: {algorithm?: string; dashboard?: string};
 }
@@ -27,7 +27,7 @@ type ImportSettings = {
 
 function importedDatasourceSettings(document: SharedDashboard, options: ImportSettings) {
   const metadata = document.dil || {};
-  const connectorUrl = String(options.jsonData.connectorUrl || '').trim();
+  const connectorUrl = String(metadata.consumerDataplaneUrl || options.jsonData.connectorUrl || '').trim();
   if (!connectorUrl) { throw new Error('Set the consumer dataplane URL in the DIL datasource configuration first.'); }
   const agreementId = String(metadata.agreementId || options.jsonData.agreementId || '').trim();
   const datasetId = String(metadata.datasetId || options.jsonData.datasetId || '').trim();
@@ -43,6 +43,7 @@ function importedDatasourceSettings(document: SharedDashboard, options: ImportSe
     offerId,
     dashboardId,
     transferType: metadata.transferType || options.jsonData.transferType || 'grafana-dashboard',
+    allowHttp: metadata.allowHttp ?? Boolean(options.jsonData.allowHttp),
   };
 }
 
@@ -150,6 +151,9 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
   };
   return <div style={{maxWidth: 720}}>
     {fields.map(([key, label]) => <Field label={label} key={String(key)}><Input value={String(options.jsonData[key] || '')} onChange={e => onOptionsChange({...options, jsonData: {...options.jsonData, [key]: e.currentTarget.value}})} /></Field>)}
+    <Field label="Allow HTTP (internal/lab only)" description="Enable only for a trusted internal dataplane URL. HTTPS is required by default.">
+      <Checkbox value={Boolean(options.jsonData.allowHttp)} onChange={event => onOptionsChange({...options, jsonData: {...options.jsonData, allowHttp: event.currentTarget.checked}})} />
+    </Field>
     <Field label="Consumer dataplane token"><SecretInput value={options.secureJsonData?.connectorToken || ''} isConfigured={Boolean(options.secureJsonFields?.connectorToken)}
       onChange={e => onOptionsChange({...options, secureJsonData: {...options.secureJsonData, connectorToken: e.currentTarget.value}})}
       onReset={() => onOptionsChange({...options, secureJsonFields: {...options.secureJsonFields, connectorToken: false}, secureJsonData: {...options.secureJsonData, connectorToken: ''}})} /></Field>

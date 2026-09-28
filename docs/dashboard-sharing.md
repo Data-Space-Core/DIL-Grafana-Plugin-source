@@ -52,7 +52,9 @@ source, so sharing a new dashboard never requires rebuilding either plugin.
    dataplane, finalized agreement, active transfer, dataset, offer, and provider
    dashboard identifiers.
 2. Receive the `GrafanaDashboard` JSON through the DIL Connector or as a file.
-3. Configure the consumer dataplane URL and token in the DIL datasource page.
+3. Use the transfer dialog to copy the consumer dataplane URL and token. The
+   downloaded document carries the non-secret URL and internal-HTTP setting;
+   the token is intentionally never written to the file.
 4. Select the JSON under **Import portable DIL dashboard JSON**. The importer
    uses the document's non-secret `dil` metadata to create or update a local DIL
    datasource, maps `${DIL_DATASOURCE}` to its UID, clears provider dashboard

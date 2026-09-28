@@ -16,7 +16,7 @@ docker build --output type=local,dest=artifacts .
 
 Outputs:
 
-- `artifacts/dataspacelab-dil-datasource-0.3.3.zip`
+- `artifacts/dataspacelab-dil-datasource-0.3.4.zip`
 - `artifacts/dataspacelab-dil-dashboard-app-0.1.2.zip`
 - a `.sha256` file and extracted installable directory for each plugin
 - `artifacts/dataspacelab-dil-datasource/`: extracted installable plugin
