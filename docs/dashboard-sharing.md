@@ -55,17 +55,18 @@ source, so sharing a new dashboard never requires rebuilding either plugin.
 ## Consumer workflow
 
 1. Install and configure `dataspacelab-dil-datasource` against the consumer DIL
-   dataplane, finalized agreement, active transfer, dataset, offer, and provider
-   dashboard identifiers.
+   dataplane. The URL and token are local consumer settings and are never taken
+   from the provider document.
 2. Receive the `GrafanaDashboard` JSON through the DIL Connector or as a file.
 3. Use the transfer dialog to copy the consumer dataplane URL and token. The
    downloaded document carries the non-secret URL and internal-HTTP setting;
    the token is intentionally never written to the file.
-4. Select the JSON under **Import portable DIL dashboard JSON**. The importer
-   uses the document's non-secret `dil` metadata to create or update a local DIL
-   datasource, maps `${DIL_DATASOURCE}` to its UID, clears provider dashboard
-   identity fields, and calls Grafana's authenticated dashboard HTTP API with
-   `overwrite: false`.
+4. Open the datasource editor and press **Import dashboard JSON** at the top.
+   Select the document. The importer fills the agreement, dataset, offer and
+   dashboard fields while preserving the local URL and token. Once those local
+   credentials are present, it creates or updates a local DIL datasource, maps
+   `${DIL_DATASOURCE}` to its UID, clears provider dashboard identity fields, and
+   calls Grafana's authenticated dashboard HTTP API with `overwrite: false`.
 5. Open the imported dashboard. Its queries execute through the local DIL
    datasource and negotiated dataspace access.
 
@@ -73,8 +74,6 @@ Datasource creation uses Grafana's authenticated datasource API and therefore
 requires a Grafana Admin session. The consumer dataplane URL and token are
 never written into the portable document; the token remains encrypted in
 Grafana's datasource settings.
-
-The older **Import shared dashboard** button remains for manifest-based imports.
 
 ## Service accounts
 

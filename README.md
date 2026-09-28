@@ -16,8 +16,8 @@ docker build --output type=local,dest=artifacts .
 
 Outputs:
 
-- `artifacts/dataspacelab-dil-datasource-0.3.4.zip`
-- `artifacts/dataspacelab-dil-dashboard-app-0.1.2.zip`
+- `artifacts/dataspacelab-dil-datasource-0.3.5.zip`
+- `artifacts/dataspacelab-dil-dashboard-app-0.1.3.zip`
 - a `.sha256` file and extracted installable directory for each plugin
 - `artifacts/dataspacelab-dil-datasource/`: extracted installable plugin
 
@@ -49,7 +49,7 @@ Unsigned builds need an explicit plugin-ID allowlist on a self-managed instance.
 Managed Grafana services may require approval.
 
 The datasource plugin provides QueryData, CheckHealth, a restricted manifest resource
-handler, panel/template selectors and dashboard import. It communicates only
+handler, panel/template selectors and portable dashboard JSON import. It communicates only
 with the configured consumer dataplane. A finalized agreement and active
 `grafana-query` transfer must already exist; it does not negotiate contracts.
 

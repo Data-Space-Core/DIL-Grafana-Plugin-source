@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { DataSourcePlugin, DataQuery, DataSourceJsonData, DataSourceInstanceSettings, DataSourcePluginOptionsEditorProps, QueryEditorProps } from '@grafana/data';
+import React, { useRef, useState } from 'react';
+import { DataSourcePlugin, DataQuery, DataSourceJsonData, DataSourceInstanceSettings, DataSourceSettings, DataSourcePluginOptionsEditorProps, QueryEditorProps } from '@grafana/data';
 import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
 import { Button, Input, Field, SecretInput, Alert, Select, Checkbox } from '@grafana/ui';
 
@@ -17,17 +17,13 @@ interface SharedDashboard {
   integrity?: {algorithm?: string; dashboard?: string};
 }
 interface GrafanaDatasource { id?: number; uid?: string; name?: string; type?: string; access?: string; url?: string; jsonData?: Record<string, unknown>; secureJsonFields?: Record<string, boolean> }
-type ImportSettings = {
-  id?: number;
-  uid?: string;
-  jsonData: Options;
-  secureJsonData?: Secrets;
-  secureJsonFields?: Record<string, boolean>;
-};
+type ImportSettings = DataSourceSettings<Options, Secrets>;
 
 function importedDatasourceSettings(document: SharedDashboard, options: ImportSettings) {
   const metadata = document.dil || {};
-  const connectorUrl = String(metadata.consumerDataplaneUrl || options.jsonData.connectorUrl || '').trim();
+  // The consumer chooses its reachable dataplane URL. A provider document may contain
+  // a URL for another deployment, so importing it must never replace the local value.
+  const connectorUrl = String(options.jsonData.connectorUrl || '').trim();
   if (!connectorUrl) { throw new Error('Set the consumer dataplane URL in the DIL datasource configuration first.'); }
   const agreementId = String(metadata.agreementId || options.jsonData.agreementId || '').trim();
   const datasetId = String(metadata.datasetId || options.jsonData.datasetId || '').trim();
@@ -97,33 +93,22 @@ class DataSource extends DataSourceWithBackend<Query, Options> {
 
 function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEditorProps<Options, Secrets>) {
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [importUrl, setImportUrl] = useState('');
+  const [importedTitle, setImportedTitle] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
   const fields: Array<[keyof Options, string]> = [['connectorUrl', 'Consumer dataplane URL'], ['agreementId', 'Finalized agreement ID'], ['datasetId', 'Dataset ID'], ['offerId', 'Offer ID'], ['dashboardId', 'Provider dashboard UID']];
-  const importDashboard = async () => {
-    setBusy(true); setError(''); setImportUrl('');
-    try {
-      if (!options.uid) { throw new Error('Save this datasource before importing a dashboard.'); }
-      const manifest = await getBackendSrv().get<Manifest>(`/api/datasources/uid/${encodeURIComponent(options.uid)}/resources/manifest`);
-      const datasource = {type: 'dataspacelab-dil-datasource', uid: options.uid};
-      const dashboard = {title: manifest.title, schemaVersion: 39, timezone: 'browser', refresh: '30s', time: {from: 'now-1h', to: 'now'}, tags: ['DIL'],
-        panels: manifest.panels.map((panel, index) => ({id: panel.id, title: panel.title, type: panel.type, datasource,
-          gridPos: {x: (index % 2) * 12, y: Math.floor(index / 2) * 8, w: 12, h: 8},
-          targets: panel.queries.map(q => ({refId: q.refId, panelId: q.panelId, templateRef: q.refId, datasource}))}))};
-      const saved = await getBackendSrv().post('/api/dashboards/db', {dashboard, overwrite: false, message: 'Imported through DIL finalized agreement'});
-      setImportUrl(saved.url);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Dashboard import failed; check the agreement and connector.'); }
-    finally { setBusy(false); }
-  };
-  const importSharedDocument = async (file?: File) => {
-    setBusy(true); setError(''); setImportUrl('');
+  const importSharedDocument = async (file?: File, importOptions: ImportSettings = options) => {
+    setBusy(true); setError(''); setNotice(''); setImportUrl('');
     try {
       if (!file) { throw new Error('Select a DIL dashboard JSON file.'); }
       const document = JSON.parse(await file.text()) as SharedDashboard;
       if (document.type !== 'GrafanaDashboard' || document.datasource?.pluginId !== 'dataspacelab-dil-datasource' || !document.dashboard) {
         throw new Error('The selected file is not a DIL GrafanaDashboard document.');
       }
-      const datasourceUid = await ensureImportedDatasource(document, options);
+      setImportedTitle(document.title || 'Shared dashboard');
+      const datasourceUid = await ensureImportedDatasource(document, importOptions);
       if (document.integrity?.dashboard) {
         if (document.integrity.algorithm !== 'sha256') { throw new Error('The dashboard document uses an unsupported integrity algorithm.'); }
         const canonicalize = (value: unknown): unknown => Array.isArray(value) ? value.map(canonicalize) : value && typeof value === 'object'
@@ -149,7 +134,53 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
     } catch (e) { setError(e instanceof Error ? e.message : 'Shared dashboard import failed.'); }
     finally { setBusy(false); }
   };
+  const populateFromSharedDocument = async (file?: File) => {
+    setError(''); setNotice(''); setImportUrl('');
+    if (!file) { return; }
+    try {
+      const document = JSON.parse(await file.text()) as SharedDashboard;
+      if (document.type !== 'GrafanaDashboard' || document.datasource?.pluginId !== 'dataspacelab-dil-datasource' || !document.dashboard) {
+        throw new Error('The selected file is not a DIL GrafanaDashboard document.');
+      }
+      const metadata = document.dil || {};
+      const populatedOptions: ImportSettings = {
+        ...options,
+        jsonData: {
+          ...options.jsonData,
+          // URL and token are deliberately kept local to this Grafana instance.
+          agreementId: String(metadata.agreementId || options.jsonData.agreementId || '').trim(),
+          datasetId: String(metadata.datasetId || options.jsonData.datasetId || '').trim(),
+          offerId: String(metadata.offerId || options.jsonData.offerId || '').trim(),
+          dashboardId: String(metadata.dashboardId || options.jsonData.dashboardId || '').trim(),
+          transferType: String(metadata.transferType || options.jsonData.transferType || 'grafana-dashboard'),
+          ...(metadata.allowHttp !== undefined ? {allowHttp: metadata.allowHttp} : {}),
+        },
+      };
+      setImportedTitle(document.title || 'Shared dashboard');
+      onOptionsChange(populatedOptions);
+      const hasUrl = Boolean(String(populatedOptions.jsonData.connectorUrl || '').trim());
+      const hasToken = Boolean(populatedOptions.secureJsonData?.connectorToken?.trim()) || Boolean(populatedOptions.secureJsonFields?.connectorToken);
+      if (hasUrl && hasToken) {
+        await importSharedDocument(file, populatedOptions);
+      } else {
+        setNotice('Dashboard metadata was imported. Enter and save the consumer dataplane URL and token, then select the JSON again to create the dashboard.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Shared dashboard JSON could not be imported.');
+    }
+  };
   return <div style={{maxWidth: 720}}>
+    <div style={{display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20}}>
+      <Button icon="upload" onClick={() => fileInput.current?.click()} disabled={busy}>
+        {busy ? 'Importing...' : 'Import dashboard JSON'}
+      </Button>
+      <input ref={fileInput} type="file" accept="application/json,.json" hidden disabled={busy}
+        onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void populateFromSharedDocument(file); }} />
+      <span>Select a portable DIL dashboard document. Its agreement fields will be filled in below.</span>
+    </div>
+    {importedTitle && <Alert title={`Dashboard selected: ${importedTitle}`} severity="info">
+      The provider URL and token are not imported. Keep the consumer dataplane URL and token configured for this Grafana instance.
+    </Alert>}
     {fields.map(([key, label]) => <Field label={label} key={String(key)}><Input value={String(options.jsonData[key] || '')} onChange={e => onOptionsChange({...options, jsonData: {...options.jsonData, [key]: e.currentTarget.value}})} /></Field>)}
     <Field label="Allow HTTP (internal/lab only)" description="Enable only for a trusted internal dataplane URL. HTTPS is required by default.">
       <Checkbox value={Boolean(options.jsonData.allowHttp)} onChange={event => onOptionsChange({...options, jsonData: {...options.jsonData, allowHttp: event.currentTarget.checked}})} />
@@ -157,10 +188,7 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
     <Field label="Consumer dataplane token"><SecretInput value={options.secureJsonData?.connectorToken || ''} isConfigured={Boolean(options.secureJsonFields?.connectorToken)}
       onChange={e => onOptionsChange({...options, secureJsonData: {...options.secureJsonData, connectorToken: e.currentTarget.value}})}
       onReset={() => onOptionsChange({...options, secureJsonFields: {...options.secureJsonFields, connectorToken: false}, secureJsonData: {...options.secureJsonData, connectorToken: ''}})} /></Field>
-    <Button icon="download-alt" onClick={importDashboard} disabled={busy}>{busy ? 'Importing...' : 'Import shared dashboard'}</Button>
-    <Field label="Import portable DIL dashboard JSON" description="Maps portable references to this saved DIL datasource instance.">
-      <Input type="file" accept="application/json,.json" disabled={busy} onChange={event => importSharedDocument(event.currentTarget.files?.[0])} />
-    </Field>
+    {notice && <Alert title="Dashboard metadata loaded" severity="info">{notice}</Alert>}
     {error && <Alert title="Import failed" severity="error">{error}</Alert>}
     {importUrl && <p><a href={importUrl}>Open imported dashboard</a></p>}
   </div>;

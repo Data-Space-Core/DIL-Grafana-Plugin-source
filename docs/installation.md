@@ -19,9 +19,9 @@ On a standard Linux package installation:
 
 ```bash
 cd artifacts
-sha256sum -c dataspacelab-dil-datasource-0.3.4.zip.sha256
-sudo unzip dataspacelab-dil-datasource-0.3.4.zip -d /var/lib/grafana/plugins
-sudo unzip dataspacelab-dil-dashboard-app-0.1.2.zip -d /var/lib/grafana/plugins
+sha256sum -c dataspacelab-dil-datasource-0.3.5.zip.sha256
+sudo unzip dataspacelab-dil-datasource-0.3.5.zip -d /var/lib/grafana/plugins
+sudo unzip dataspacelab-dil-dashboard-app-0.1.3.zip -d /var/lib/grafana/plugins
 sudo chown -R grafana:grafana /var/lib/grafana/plugins/dataspacelab-dil-datasource
 sudo chown -R grafana:grafana /var/lib/grafana/plugins/dataspacelab-dil-dashboard-app
 sudo chmod 755 /var/lib/grafana/plugins/dataspacelab-dil-datasource/gpx_dil_*
@@ -68,7 +68,7 @@ environment:
 Alternatively, host the ZIP on a trusted HTTPS endpoint:
 
 ```text
-GF_PLUGINS_PREINSTALL_SYNC=dataspacelab-dil-datasource@0.3.4@https://YOUR-RELEASE-HOST/dataspacelab-dil-datasource-0.3.4.zip,dataspacelab-dil-dashboard-app@0.1.2@https://YOUR-RELEASE-HOST/dataspacelab-dil-dashboard-app-0.1.2.zip
+GF_PLUGINS_PREINSTALL_SYNC=dataspacelab-dil-datasource@0.3.5@https://YOUR-RELEASE-HOST/dataspacelab-dil-datasource-0.3.5.zip,dataspacelab-dil-dashboard-app@0.1.3@https://YOUR-RELEASE-HOST/dataspacelab-dil-dashboard-app-0.1.3.zip
 ```
 
 Replace the placeholder with the published artifact URL and append to any
@@ -85,9 +85,11 @@ In Connections > Data sources, add **DIL Dataspace**:
 - Provider dashboard UID from the shared dataset.
 - Consumer dataplane token in the secure field.
 
-Save & test checks the manifest through the backend. **Import shared dashboard**
-creates a new local dashboard using the saved configuration; it never overwrites
-one. Queries use approved panel/template references, not arbitrary PromQL.
+Save & test checks the manifest through the backend. **Import dashboard JSON**
+opens a portable `GrafanaDashboard` document, fills the agreement metadata, and
+creates a new local dashboard using the saved consumer URL and token. It never
+overwrites an existing dashboard. Queries use approved panel/template references,
+not arbitrary PromQL.
 Restrict datasource permissions: authorized Grafana users exercise its agreement.
 
 Saved settings remain `connectorUrl` and secure `connectorToken` for
@@ -100,7 +102,7 @@ Service setup is documented separately in
 `DIL-Connector-source/Dataplane/GRAFANA-INTEGRATION.md`. Optional deployment and
 synthetic test fixtures are in `DIL-Grafana-deployment`.
 
-Consumers can also import a `GrafanaDashboard` document from the datasource
+Consumers can import a `GrafanaDashboard` document from the datasource
 configuration page. Providers install and enable the companion app, configure
 its HTTPS Connector publish endpoint, then launch **Share dashboard via DIL**
 from a dashboard panel menu. See [dashboard sharing](dashboard-sharing.md).
