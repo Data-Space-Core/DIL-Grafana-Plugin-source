@@ -30,7 +30,14 @@ function download(document: SharedDocument) {
   URL.revokeObjectURL(href);
 }
 
-function ShareDialog({dashboard, onDismiss}: {dashboard: Record<string, unknown>; onDismiss?: () => void}) {
+function currentDashboardUid(dashboard: Record<string, unknown>): string {
+  const fromContext = typeof dashboard.uid === 'string' ? dashboard.uid : '';
+  if (fromContext) { return fromContext; }
+  const match = window.location.pathname.match(/^\/d\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<string, unknown>; dashboardUid: string; onDismiss?: () => void}) {
   const [assets, setAssets] = useState('');
   const [busy, setBusy] = useState<'export' | 'publish'>();
   const [message, setMessage] = useState('');
@@ -39,9 +46,17 @@ function ShareDialog({dashboard, onDismiss}: {dashboard: Record<string, unknown>
   const run = async (operation: 'export' | 'publish') => {
     setBusy(operation); setMessage(''); setError('');
     try {
+      // Panel-menu extension context contains dashboard metadata only. Fetch the
+      // complete dashboard through Grafana's authenticated API before sharing.
+      const full = await getBackendSrv().get<{dashboard?: Record<string, unknown>}>(
+        `/api/dashboards/uid/${encodeURIComponent(dashboardUid)}`
+      );
+      if (!full.dashboard || !Array.isArray(full.dashboard.panels)) {
+        throw new Error('Grafana returned no complete dashboard definition.');
+      }
       const document = await getBackendSrv().post<SharedDocument | {status: string}>(
         `/api/plugins/${APP_ID}/resources/${operation}`,
-        {dashboard, assets: assets.split(/[\n,]/).map(v => v.trim()).filter(Boolean)}
+        {dashboard: full.dashboard, assets: assets.split(/[\n,]/).map(v => v.trim()).filter(Boolean)}
       );
       if (operation === 'export') {
         download(document as SharedDocument);
@@ -135,11 +150,12 @@ export const plugin = new AppPlugin<AppConfig>()
     icon: 'share-alt',
     onClick: (_event, helpers) => {
       const dashboard = helpers.context?.dashboard as unknown as Record<string, unknown> | undefined;
-      if (!dashboard) { return; }
+      const dashboardUid = dashboard ? currentDashboardUid(dashboard) : '';
+      if (!dashboard || !dashboardUid) { return; }
       helpers.openModal({
         title: 'Share dashboard via DIL',
         width: 760,
-        body: ({onDismiss}) => <ShareDialog dashboard={dashboard} onDismiss={onDismiss} />,
+        body: ({onDismiss}) => <ShareDialog dashboard={dashboard} dashboardUid={dashboardUid} onDismiss={onDismiss} />,
       });
     },
   });

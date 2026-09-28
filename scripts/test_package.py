@@ -34,7 +34,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dist").mkdir()
-            metadata = {"name": "dataspacelab-dil-datasource", "version": "0.3.0"}
+            metadata = {"name": "dataspacelab-dil-datasource", "version": "0.3.1"}
             (root / "package.json").write_text(json.dumps(metadata))
             plugin_dir = root / "dist" / "dataspacelab-dil-datasource"
             plugin_dir.mkdir(parents=True)

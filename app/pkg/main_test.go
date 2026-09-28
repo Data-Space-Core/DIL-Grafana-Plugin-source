@@ -36,6 +36,9 @@ func TestMakePortableRejectsInvalidAssetsAndUntitledDashboard(t *testing.T) {
 	if _, err := makePortable(shareRequest{Dashboard: map[string]any{"panels": []any{}}}); err == nil {
 		t.Fatal("untitled dashboard accepted")
 	}
+	if _, err := makePortable(shareRequest{Dashboard: map[string]any{"title": "metadata only"}}); err == nil {
+		t.Fatal("metadata-only dashboard accepted")
+	}
 }
 
 func TestEndpointValidationRequiresHTTPSUnlessExplicitlyAllowed(t *testing.T) {

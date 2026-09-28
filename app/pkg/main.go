@@ -168,6 +168,10 @@ func makePortable(input shareRequest) (sharedDocument, error) {
 	if strings.TrimSpace(title) == "" {
 		return sharedDocument{}, errors.New("dashboard title is required")
 	}
+	panels, ok := dashboard["panels"].([]any)
+	if !ok || len(panels) == 0 {
+		return sharedDocument{}, errors.New("complete dashboard JSON with at least one panel is required")
+	}
 	delete(dashboard, "id")
 	delete(dashboard, "uid")
 	delete(dashboard, "version")
