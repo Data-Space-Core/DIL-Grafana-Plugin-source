@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -49,6 +52,58 @@ func TestEndpointValidationRequiresHTTPSUnlessExplicitlyAllowed(t *testing.T) {
 	}
 	if _, err := validateEndpoint("http://localhost:8080/share", true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateDataSourceUsesManagementTokenAndStableDashboardAddress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/mgmt/data-sources" {
+			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
+		}
+		if request.Header.Get("Authorization") != "Bearer management-secret" {
+			t.Fatalf("management token was not sent")
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["transferType"] != "grafana-query" {
+			t.Fatalf("unexpected transfer type: %v", payload["transferType"])
+		}
+		address := payload["dataAddress"].(map[string]any)
+		if address["dashboardId"] != "weatherstation" {
+			t.Fatalf("unexpected dashboard address: %v", address)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"@id":"urn:dil:grafana:dashboard:weatherstation"}`))
+	}))
+	defer server.Close()
+
+	app := &sharingApp{
+		settings:        appSettings{ManagementAPIURL: server.URL, AllowHTTP: true},
+		managementToken: "management-secret",
+		client:          server.Client(),
+	}
+	created, err := app.createDataSource(context.Background(), sharedDocument{
+		Type: "GrafanaDashboardReference", Title: "Weatherstation",
+		DataAddress: map[string]string{"type": "GrafanaDashboard", "dashboardId": "weatherstation"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.(map[string]any)["@id"] != "urn:dil:grafana:dashboard:weatherstation" {
+		t.Fatalf("unexpected connector response: %v", created)
+	}
+}
+
+func TestManagementDataSourceEndpointAddsConnectorRoute(t *testing.T) {
+	endpoint, err := managementDataSourceEndpoint("https://connector.example", false)
+	if err != nil || endpoint != "https://connector.example/mgmt/data-sources" {
+		t.Fatalf("unexpected endpoint: %s (%v)", endpoint, err)
+	}
+	endpoint, err = managementDataSourceEndpoint("https://connector.example/mgmt", false)
+	if err != nil || endpoint != "https://connector.example/mgmt/data-sources" {
+		t.Fatalf("unexpected /mgmt endpoint: %s (%v)", endpoint, err)
 	}
 }
 

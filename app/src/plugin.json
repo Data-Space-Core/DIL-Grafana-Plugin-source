@@ -4,7 +4,7 @@
   "id": "dataspacelab-dil-dashboard-app",
   "backend": true,
   "executable": "gpx_dil_share",
-  "autoEnabled": false,
+  "autoEnabled": true,
   "includes": [
     {
       "type": "page",
@@ -36,7 +36,7 @@
     "author": {"name": "Data Space Lab"},
     "keywords": ["dataspace", "DIL", "dashboard"],
     "logos": {"small": "img/logo.svg", "large": "img/logo.svg"},
-    "version": "0.1.2",
+    "version": "0.1.3",
     "updated": "2026-09-28"
   },
   "dependencies": {

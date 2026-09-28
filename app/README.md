@@ -4,6 +4,13 @@ Use **Share dashboard via DIL** from any panel menu to export a reference to
 the whole saved dashboard. The authenticated Grafana API resolves the actual
 UID and title. Unsaved edits must be saved before sharing.
 
+The app configuration page accepts a DIL Connector management API URL and a
+separate encrypted management token. **Create/update source** posts an
+idempotent `grafana-query` data source to `/mgmt/data-sources`; **Publish to DIL**
+performs that step before publishing the dashboard reference. The management
+token is backend-only and never appears in the browser response or dashboard
+JSON.
+
 Example export:
 
 ```json

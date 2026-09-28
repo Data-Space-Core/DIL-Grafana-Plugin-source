@@ -7,6 +7,7 @@ const APP_ID = 'dataspacelab-dil-dashboard-app';
 
 interface AppConfig {
   connectorEndpoint?: string;
+  managementApiUrl?: string;
   allowHttp?: boolean;
 }
 
@@ -34,11 +35,11 @@ function currentDashboardUid(dashboard: Record<string, unknown>): string {
 }
 
 function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<string, unknown>; dashboardUid: string; onDismiss?: () => void}) {
-  const [busy, setBusy] = useState<'export' | 'publish'>();
+  const [busy, setBusy] = useState<'create' | 'export' | 'publish'>();
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const run = async (operation: 'export' | 'publish') => {
+  const run = async (operation: 'create' | 'export' | 'publish') => {
     setBusy(operation); setMessage(''); setError('');
     try {
       // Panel-menu extension context contains dashboard metadata only. Fetch the
@@ -49,15 +50,18 @@ function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<st
       if (!full.dashboard || full.dashboard.uid !== dashboardUid) {
         throw new Error('Grafana returned no complete dashboard definition.');
       }
+      const resource = operation === 'create' ? 'create-datasource' : operation;
       const document = await getBackendSrv().post<SharedDocument | {status: string}>(
-        `/api/plugins/${APP_ID}/resources/${operation}`,
+        `/api/plugins/${APP_ID}/resources/${resource}`,
         {dashboard: {uid: full.dashboard.uid, title: full.dashboard.title}}
       );
       if (operation === 'export') {
         download(document as SharedDocument);
         setMessage('Dashboard reference downloaded.');
+      } else if (operation === 'create') {
+        setMessage('Grafana dashboard data source created or updated in the DIL Connector.');
       } else {
-        setMessage('Dashboard published to the configured DIL Connector endpoint.');
+        setMessage('Dashboard data source created and reference published to the configured DIL Connector endpoint.');
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : `Dashboard ${operation} failed.`);
@@ -72,6 +76,7 @@ function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<st
     {message && <Alert title="DIL dashboard sharing" severity="success">{message}</Alert>}
     <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16}}>
       <Button variant="secondary" onClick={onDismiss}>Close</Button>
+      <Button icon="database" disabled={Boolean(busy)} onClick={() => run('create')}>{busy === 'create' ? 'Creating...' : 'Create/update source'}</Button>
       <Button icon="download-alt" disabled={Boolean(busy)} onClick={() => run('export')}>{busy === 'export' ? 'Exporting...' : 'Download JSON'}</Button>
       <Button icon="upload" disabled={Boolean(busy)} onClick={() => run('publish')}>{busy === 'publish' ? 'Publishing...' : 'Publish to DIL'}</Button>
     </div>
@@ -81,9 +86,13 @@ function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<st
 function Root({meta}: AppRootProps<AppConfig>) {
   const config = meta.jsonData || {};
   const [endpoint, setEndpoint] = useState(config.connectorEndpoint || '');
+  const [managementApiUrl, setManagementApiUrl] = useState(config.managementApiUrl || '');
   const [token, setToken] = useState('');
+  const [managementToken, setManagementToken] = useState('');
   const [tokenConfigured, setTokenConfigured] = useState(Boolean(meta.secureJsonFields?.connectorToken));
+  const [managementTokenConfigured, setManagementTokenConfigured] = useState(Boolean(meta.secureJsonFields?.managementApiToken));
   const [tokenDirty, setTokenDirty] = useState(false);
+  const [managementTokenDirty, setManagementTokenDirty] = useState(false);
   const [allowHttp, setAllowHttp] = useState(Boolean(config.allowHttp));
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -99,13 +108,17 @@ function Root({meta}: AppRootProps<AppConfig>) {
   const save = async () => {
     setSaved(false); setError('');
     try {
+      const secureJsonData: Record<string, string> = {};
+      if (tokenDirty) { secureJsonData.connectorToken = token; }
+      if (managementTokenDirty) { secureJsonData.managementApiToken = managementToken; }
       await getBackendSrv().post(`/api/plugins/${APP_ID}/settings`, {
         enabled: true,
-        jsonData: {connectorEndpoint: endpoint.trim(), allowHttp},
-        ...(tokenDirty ? {secureJsonData: {connectorToken: token}} : {}),
+        jsonData: {connectorEndpoint: endpoint.trim(), managementApiUrl: managementApiUrl.trim(), allowHttp},
+        ...(Object.keys(secureJsonData).length ? {secureJsonData} : {}),
       });
       setTokenConfigured(Boolean(token) || (tokenConfigured && !tokenDirty));
-      setToken(''); setTokenDirty(false); setSaved(true);
+      setManagementTokenConfigured(Boolean(managementToken) || (managementTokenConfigured && !managementTokenDirty));
+      setToken(''); setManagementToken(''); setTokenDirty(false); setManagementTokenDirty(false); setSaved(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Configuration could not be saved.');
     }
@@ -120,6 +133,14 @@ function Root({meta}: AppRootProps<AppConfig>) {
         <SecretInput value={token} isConfigured={tokenConfigured}
           onChange={event => { setToken(event.currentTarget.value); setTokenDirty(true); }}
           onReset={() => { setToken(''); setTokenConfigured(false); setTokenDirty(true); }} />
+      </Field>
+      <Field label="DIL Connector management API URL" description="Connector management service origin or exact /mgmt/data-sources endpoint. The app creates the Grafana data source here before publishing.">
+        <Input value={managementApiUrl} onChange={event => setManagementApiUrl(event.currentTarget.value)} placeholder="https://connector.example" />
+      </Field>
+      <Field label="DIL Connector management API token" description="Stored encrypted by Grafana and used only by the app backend to call POST /mgmt/data-sources.">
+        <SecretInput value={managementToken} isConfigured={managementTokenConfigured}
+          onChange={event => { setManagementToken(event.currentTarget.value); setManagementTokenDirty(true); }}
+          onReset={() => { setManagementToken(''); setManagementTokenConfigured(false); setManagementTokenDirty(true); }} />
       </Field>
       <label style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16}}>
         <input type="checkbox" checked={allowHttp} onChange={event => setAllowHttp(event.currentTarget.checked)} />

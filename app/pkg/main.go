@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -29,13 +30,15 @@ var assetPattern = regexp.MustCompile(`^urn:(?:dil:asset|uuid):[^\s]+$`)
 
 type appSettings struct {
 	ConnectorEndpoint string `json:"connectorEndpoint"`
+	ManagementAPIURL  string `json:"managementApiUrl"`
 	AllowHTTP         bool   `json:"allowHttp"`
 }
 
 type sharingApp struct {
-	settings appSettings
-	token    string
-	client   *http.Client
+	settings        appSettings
+	token           string
+	managementToken string
+	client          *http.Client
 }
 
 type shareRequest struct {
@@ -56,8 +59,9 @@ func newApp(_ context.Context, settings backend.AppInstanceSettings) (instancemg
 		}
 	}
 	return &sharingApp{
-		settings: config,
-		token:    settings.DecryptedSecureJSONData["connectorToken"],
+		settings:        config,
+		token:           settings.DecryptedSecureJSONData["connectorToken"],
+		managementToken: settings.DecryptedSecureJSONData["managementApiToken"],
 		client: &http.Client{
 			Timeout:       20 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -71,11 +75,14 @@ func (a *sharingApp) CallResource(ctx context.Context, req *backend.CallResource
 	}
 	if req.Method == http.MethodGet && strings.Trim(req.Path, "/") == "status" {
 		return sendJSON(sender, http.StatusOK, map[string]any{
-			"configured": a.settings.ConnectorEndpoint != "" && a.token != "",
-			"endpoint":   a.settings.ConnectorEndpoint,
+			"configured":           a.settings.ConnectorEndpoint != "" && a.token != "",
+			"endpoint":             a.settings.ConnectorEndpoint,
+			"managementConfigured": a.settings.ManagementAPIURL != "" && a.managementToken != "",
+			"managementEndpoint":   a.settings.ManagementAPIURL,
 		}, nil)
 	}
-	if req.Method != http.MethodPost || (strings.Trim(req.Path, "/") != "export" && strings.Trim(req.Path, "/") != "publish") {
+	path := strings.Trim(req.Path, "/")
+	if req.Method != http.MethodPost || (path != "export" && path != "publish" && path != "create-datasource") {
 		return sender.Send(&backend.CallResourceResponse{Status: http.StatusNotFound})
 	}
 	if len(req.Body) > maxRequestBytes {
@@ -97,10 +104,77 @@ func (a *sharingApp) CallResource(ctx context.Context, req *backend.CallResource
 			"Content-Disposition": {`attachment; filename="dil-dashboard.json"`},
 		})
 	}
-	return a.publish(ctx, document, sender)
+	created, err := a.createDataSource(ctx, document)
+	if err != nil {
+		return sendRemoteError(sender, "DIL Connector data source creation failed", err)
+	}
+	if path == "create-datasource" {
+		return sendJSON(sender, http.StatusOK, map[string]any{"status": "created", "dataSource": created}, map[string][]string{"Cache-Control": {"no-store"}})
+	}
+	return a.publish(ctx, document, created, sender)
 }
 
-func (a *sharingApp) publish(ctx context.Context, document sharedDocument, sender backend.CallResourceResponseSender) error {
+type remoteError struct {
+	status int
+	detail string
+}
+
+func (e remoteError) Error() string { return e.detail }
+
+func sendRemoteError(sender backend.CallResourceResponseSender, prefix string, err error) error {
+	payload := map[string]any{
+		"message": prefix,
+		"detail":  err.Error(),
+	}
+	if remote, ok := err.(remoteError); ok {
+		payload["upstreamStatus"] = remote.status
+	}
+	return sendJSON(sender, http.StatusBadGateway, payload, nil)
+}
+
+func (a *sharingApp) createDataSource(ctx context.Context, document sharedDocument) (any, error) {
+	endpoint, err := managementDataSourceEndpoint(a.settings.ManagementAPIURL, a.settings.AllowHTTP)
+	if err != nil || a.managementToken == "" {
+		return nil, errors.New("configure the DIL Connector management API URL and token")
+	}
+	payload := map[string]any{
+		"@id":          "urn:dil:grafana:dashboard:" + document.DataAddress["dashboardId"],
+		"name":         document.Title,
+		"description":  "Grafana dashboard shared via DIL",
+		"transferType": "grafana-query",
+		"dataAddress": map[string]any{
+			"type":        "GrafanaDashboard",
+			"dashboardId": document.DataAddress["dashboardId"],
+		},
+	}
+	body, _ := json.Marshal(payload)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, errors.New("invalid DIL Connector management request")
+	}
+	request.Header.Set("Authorization", "Bearer "+a.managementToken)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", appID+"/0.1.3")
+	response, err := a.client.Do(request)
+	if err != nil {
+		return nil, errors.New("DIL Connector management API is unavailable")
+	}
+	defer response.Body.Close()
+	result, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024+1))
+	if readErr != nil || len(result) > 1024*1024 {
+		return nil, errors.New("invalid DIL Connector management response")
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, remoteError{status: response.StatusCode, detail: fmt.Sprintf("management API returned HTTP %d", response.StatusCode)}
+	}
+	var parsed any
+	if len(result) == 0 || json.Unmarshal(result, &parsed) != nil {
+		parsed = map[string]any{"status": "created"}
+	}
+	return parsed, nil
+}
+
+func (a *sharingApp) publish(ctx context.Context, document sharedDocument, created any, sender backend.CallResourceResponseSender) error {
 	endpoint, err := validateEndpoint(a.settings.ConnectorEndpoint, a.settings.AllowHTTP)
 	if err != nil || a.token == "" {
 		return sendJSON(sender, http.StatusFailedDependency, map[string]string{"message": "configure an HTTPS DIL Connector endpoint and token"}, nil)
@@ -132,7 +206,7 @@ func (a *sharingApp) publish(ctx context.Context, document sharedDocument, sende
 	if len(result) == 0 || json.Unmarshal(result, &parsed) != nil {
 		parsed = map[string]any{"status": "published"}
 	}
-	return sendJSON(sender, http.StatusOK, map[string]any{"status": "published", "connectorResponse": parsed}, map[string][]string{"Cache-Control": {"no-store"}})
+	return sendJSON(sender, http.StatusOK, map[string]any{"status": "published", "dataSource": created, "connectorResponse": parsed}, map[string][]string{"Cache-Control": {"no-store"}})
 }
 
 func validateEndpoint(raw string, allowHTTP bool) (string, error) {
@@ -142,6 +216,27 @@ func validateEndpoint(raw string, allowHTTP bool) (string, error) {
 	}
 	if parsed.Scheme != "https" && !(allowHTTP && parsed.Scheme == "http") {
 		return "", errors.New("HTTPS endpoint required")
+	}
+	return parsed.String(), nil
+}
+
+func managementDataSourceEndpoint(raw string, allowHTTP bool) (string, error) {
+	endpoint, err := validateEndpoint(raw, allowHTTP)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(path, "/data-sources") {
+		if strings.HasSuffix(path, "/mgmt") {
+			path += "/data-sources"
+		} else {
+			path += "/mgmt/data-sources"
+		}
+		parsed.Path = path
 	}
 	return parsed.String(), nil
 }

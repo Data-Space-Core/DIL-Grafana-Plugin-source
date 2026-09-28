@@ -59,8 +59,11 @@ streaming, alerts, annotations and arbitrary query editors are not implemented.
 Provider credentials and query text remain in the provider dataplane/Grafana.
 
 The companion `dataspacelab-dil-dashboard-app` adds the supported Grafana panel
-menu action **Share dashboard via DIL**, backend export/publish resources, and
-encrypted Connector endpoint credentials. Provider export now returns a minimal
+menu action **Share dashboard via DIL**, backend export/publish resources,
+encrypted Connector endpoint credentials, and separate encrypted DIL Connector
+management API credentials. It can create or update the connector's
+`grafana-query` data source for the selected dashboard UID before publishing.
+Provider export now returns a minimal
 `GrafanaDashboardReference` with the title and `dataAddress.dashboardId` (the actual
 Grafana UID). The dataplane's portable `GrafanaDashboard` document additionally
 contains non-secret `dil` transfer metadata so the importer can create or update

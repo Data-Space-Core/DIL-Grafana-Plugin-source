@@ -34,12 +34,18 @@ never returned to frontend JavaScript.
    datasource too when provider dashboards use it locally.
 2. Enable **DIL Dashboard Sharing** for the Grafana organization.
 3. Open `/a/dataspacelab-dil-dashboard-app/config` as an Admin.
-4. Set the exact HTTPS Connector endpoint that accepts the shared document and
-   its narrowly scoped publish token. Plain HTTP is an explicit development-only
-   option.
+4. Set the HTTPS DIL Connector management API URL and a narrowly scoped
+   management token. The app calls `POST /mgmt/data-sources` to create or update
+   an idempotent `grafana-query` data source for the dashboard UID. Set the
+   separate HTTPS Connector publish endpoint and publish token if direct
+   publication is required. Plain HTTP is an explicit development-only option.
 5. Open a dashboard and choose **Share dashboard via DIL** from any panel menu.
-6. Add asset URNs not already represented by dashboard query models.
-7. Download the JSON document or publish it directly.
+6. Use **Create/update source** to register the dashboard data source in the
+   connector. The management credential is never returned to the browser or
+   embedded in the shared document.
+7. Add asset URNs not already represented by dashboard query models.
+8. Download the JSON document or publish it directly. **Publish to DIL** also
+   ensures the connector data source exists before sending the reference.
 
 The app removes `id`, `uid`, and `version`, preserves the visualization model,
 replaces DIL datasource instance UIDs with `${DIL_DATASOURCE}`, and records
