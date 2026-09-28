@@ -190,7 +190,11 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
       onReset={() => onOptionsChange({...options, secureJsonFields: {...options.secureJsonFields, connectorToken: false}, secureJsonData: {...options.secureJsonData, connectorToken: ''}})} /></Field>
     {notice && <Alert title="Dashboard metadata loaded" severity="info">{notice}</Alert>}
     {error && <Alert title="Import failed" severity="error">{error}</Alert>}
-    {importUrl && <p><a href={importUrl}>Open imported dashboard</a></p>}
+    {importUrl && <div style={{marginTop: 20}}>
+      <Button variant="primary" icon="dashboard" onClick={() => window.location.assign(importUrl)}>
+        Open imported dashboard
+      </Button>
+    </div>}
   </div>;
 }
 

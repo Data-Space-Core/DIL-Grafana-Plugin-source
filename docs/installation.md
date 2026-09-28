@@ -19,8 +19,8 @@ On a standard Linux package installation:
 
 ```bash
 cd artifacts
-sha256sum -c dataspacelab-dil-datasource-0.3.5.zip.sha256
-sudo unzip dataspacelab-dil-datasource-0.3.5.zip -d /var/lib/grafana/plugins
+sha256sum -c dataspacelab-dil-datasource-0.3.6.zip.sha256
+sudo unzip dataspacelab-dil-datasource-0.3.6.zip -d /var/lib/grafana/plugins
 sudo unzip dataspacelab-dil-dashboard-app-0.1.3.zip -d /var/lib/grafana/plugins
 sudo chown -R grafana:grafana /var/lib/grafana/plugins/dataspacelab-dil-datasource
 sudo chown -R grafana:grafana /var/lib/grafana/plugins/dataspacelab-dil-dashboard-app
@@ -68,7 +68,7 @@ environment:
 Alternatively, host the ZIP on a trusted HTTPS endpoint:
 
 ```text
-GF_PLUGINS_PREINSTALL_SYNC=dataspacelab-dil-datasource@0.3.5@https://YOUR-RELEASE-HOST/dataspacelab-dil-datasource-0.3.5.zip,dataspacelab-dil-dashboard-app@0.1.3@https://YOUR-RELEASE-HOST/dataspacelab-dil-dashboard-app-0.1.3.zip
+GF_PLUGINS_PREINSTALL_SYNC=dataspacelab-dil-datasource@0.3.6@https://YOUR-RELEASE-HOST/dataspacelab-dil-datasource-0.3.6.zip,dataspacelab-dil-dashboard-app@0.1.3@https://YOUR-RELEASE-HOST/dataspacelab-dil-dashboard-app-0.1.3.zip
 ```
 
 Replace the placeholder with the published artifact URL and append to any
