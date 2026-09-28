@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AppPlugin, AppRootProps, PluginExtensionPanelContext, PluginExtensionPoints } from '@grafana/data';
 import { getBackendSrv, PluginPage } from '@grafana/runtime';
-import { Alert, Button, Field, Input, SecretInput, TextArea } from '@grafana/ui';
+import { Alert, Button, Field, Input, SecretInput } from '@grafana/ui';
 
 const APP_ID = 'dataspacelab-dil-dashboard-app';
 
@@ -11,13 +11,9 @@ interface AppConfig {
 }
 
 interface SharedDocument {
-  type: 'GrafanaDashboard';
+  type: 'GrafanaDashboardReference';
   title: string;
-  dashboard: Record<string, unknown>;
-  datasource: {pluginId: string; placeholder: string};
-  assets: string[];
-  requires: Record<string, unknown>;
-  integrity: Record<string, unknown>;
+  dataAddress: {type: 'GrafanaDashboard'; dashboardId: string};
 }
 
 function download(document: SharedDocument) {
@@ -38,7 +34,6 @@ function currentDashboardUid(dashboard: Record<string, unknown>): string {
 }
 
 function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<string, unknown>; dashboardUid: string; onDismiss?: () => void}) {
-  const [assets, setAssets] = useState('');
   const [busy, setBusy] = useState<'export' | 'publish'>();
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -51,16 +46,16 @@ function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<st
       const full = await getBackendSrv().get<{dashboard?: Record<string, unknown>}>(
         `/api/dashboards/uid/${encodeURIComponent(dashboardUid)}`
       );
-      if (!full.dashboard || !Array.isArray(full.dashboard.panels)) {
+      if (!full.dashboard || full.dashboard.uid !== dashboardUid) {
         throw new Error('Grafana returned no complete dashboard definition.');
       }
       const document = await getBackendSrv().post<SharedDocument | {status: string}>(
         `/api/plugins/${APP_ID}/resources/${operation}`,
-        {dashboard: full.dashboard, assets: assets.split(/[\n,]/).map(v => v.trim()).filter(Boolean)}
+        {dashboard: {uid: full.dashboard.uid, title: full.dashboard.title}}
       );
       if (operation === 'export') {
         download(document as SharedDocument);
-        setMessage('Portable dashboard document downloaded.');
+        setMessage('Dashboard reference downloaded.');
       } else {
         setMessage('Dashboard published to the configured DIL Connector endpoint.');
       }
@@ -72,10 +67,7 @@ function ShareDialog({dashboard, dashboardUid, onDismiss}: {dashboard: Record<st
   };
 
   return <div style={{width: 'min(680px, 80vw)'}}>
-    <p>The complete current dashboard will be exported. DIL datasource references are replaced with a portable placeholder.</p>
-    <Field label="DIL asset IDs" description="Optional comma- or line-separated asset URNs. Asset IDs present in dashboard query models are detected automatically.">
-      <TextArea rows={4} value={assets} onChange={event => setAssets(event.currentTarget.value)} placeholder="urn:dil:asset:..." />
-    </Field>
+    <Field label="Dashboard UID"><Input value={dashboardUid} readOnly /></Field>
     {error && <Alert title="DIL dashboard sharing failed" severity="error">{error}</Alert>}
     {message && <Alert title="DIL dashboard sharing" severity="success">{message}</Alert>}
     <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16}}>
@@ -98,9 +90,8 @@ function Root({meta}: AppRootProps<AppConfig>) {
   const isConfig = window.location.pathname.endsWith('/config');
 
   if (!isConfig) {
-    return <PluginPage subTitle="Portable dashboard definitions for negotiated DIL data access">
-      <p>Open a dashboard panel menu and choose <strong>Share dashboard via DIL</strong>. The action exports the entire dashboard, not only that panel.</p>
-      <p>Provider-created dashboards stay independent of plugin releases. Consumer Grafana instances import the document and map its datasource placeholder to their local DIL datasource.</p>
+    return <PluginPage subTitle="Dashboard references for DIL data sources">
+      <p>Open a dashboard panel menu and choose <strong>Share dashboard via DIL</strong>. The action shares a reference to the whole saved dashboard.</p>
       <Button icon="cog" onClick={() => window.location.assign(`/a/${APP_ID}/config`)}>Configure DIL endpoint</Button>
     </PluginPage>;
   }
@@ -122,7 +113,7 @@ function Root({meta}: AppRootProps<AppConfig>) {
 
   return <PluginPage subTitle="Provider publishing configuration">
     <div style={{maxWidth: 720}}>
-      <Field label="DIL Connector dashboard publish endpoint" description="Exact HTTPS REST endpoint that accepts a GrafanaDashboard document.">
+      <Field label="DIL Connector dashboard publish endpoint" description="Exact HTTPS REST endpoint that accepts a GrafanaDashboardReference document.">
         <Input value={endpoint} onChange={event => setEndpoint(event.currentTarget.value)} placeholder="https://connector.example/api/..." />
       </Field>
       <Field label="DIL Connector publish token" description="Stored encrypted by Grafana and used only by the app backend.">
@@ -145,7 +136,7 @@ export const plugin = new AppPlugin<AppConfig>()
   .setRootPage(Root)
   .addLink<PluginExtensionPanelContext>({
     title: 'Share dashboard via DIL',
-    description: 'Export or publish this dashboard as a portable DIL document',
+    description: 'Export or publish this dashboard as a DIL dashboard reference',
     targets: [PluginExtensionPoints.DashboardPanelMenu],
     icon: 'share-alt',
     onClick: (_event, helpers) => {

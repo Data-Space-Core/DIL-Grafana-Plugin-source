@@ -16,8 +16,8 @@ docker build --output type=local,dest=artifacts .
 
 Outputs:
 
-- `artifacts/dataspacelab-dil-datasource-0.3.1.zip`
-- `artifacts/dataspacelab-dil-dashboard-app-0.1.1.zip`
+- `artifacts/dataspacelab-dil-datasource-0.3.3.zip`
+- `artifacts/dataspacelab-dil-dashboard-app-0.1.2.zip`
 - a `.sha256` file and extracted installable directory for each plugin
 - `artifacts/dataspacelab-dil-datasource/`: extracted installable plugin
 
@@ -60,7 +60,13 @@ Provider credentials and query text remain in the provider dataplane/Grafana.
 
 The companion `dataspacelab-dil-dashboard-app` adds the supported Grafana panel
 menu action **Share dashboard via DIL**, backend export/publish resources, and
-encrypted Connector endpoint credentials. See
+encrypted Connector endpoint credentials. Provider export now returns a minimal
+`GrafanaDashboardReference` with the title and `dataAddress.dashboardId` (the actual
+Grafana UID). The dataplane's portable `GrafanaDashboard` document additionally
+contains non-secret `dil` transfer metadata so the importer can create or update
+the consumer datasource automatically. It never contains the consumer token.
+See [app documentation](app/README.md)
+for the provider reference format. See
 [dashboard sharing](docs/dashboard-sharing.md) for provider and consumer flows.
 
 ## Compatibility and tests

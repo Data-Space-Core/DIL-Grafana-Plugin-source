@@ -52,14 +52,19 @@ source, so sharing a new dashboard never requires rebuilding either plugin.
    dataplane, finalized agreement, active transfer, dataset, offer, and provider
    dashboard identifiers.
 2. Receive the `GrafanaDashboard` JSON through the DIL Connector or as a file.
-3. On that datasource's configuration page, select the JSON under **Import
-   portable DIL dashboard JSON**.
-4. The plugin validates the document type and plugin ID, maps
-   `${DIL_DATASOURCE}` to that local datasource UID, clears provider dashboard
+3. Configure the consumer dataplane URL and token in the DIL datasource page.
+4. Select the JSON under **Import portable DIL dashboard JSON**. The importer
+   uses the document's non-secret `dil` metadata to create or update a local DIL
+   datasource, maps `${DIL_DATASOURCE}` to its UID, clears provider dashboard
    identity fields, and calls Grafana's authenticated dashboard HTTP API with
    `overwrite: false`.
 5. Open the imported dashboard. Its queries execute through the local DIL
    datasource and negotiated dataspace access.
+
+Datasource creation uses Grafana's authenticated datasource API and therefore
+requires a Grafana Admin session. The consumer dataplane URL and token are
+never written into the portable document; the token remains encrypted in
+Grafana's datasource settings.
 
 The older **Import shared dashboard** button remains for manifest-based imports.
 

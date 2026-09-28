@@ -1,25 +1,40 @@
 # DIL Dashboard Sharing app
 
-Provider companion for `dataspacelab-dil-datasource`. Enable it in Grafana,
-configure the DIL Connector publish endpoint, then use **Share dashboard via
-DIL** from any panel menu. The action always exports the complete dashboard.
+Use **Share dashboard via DIL** from any panel menu to export a reference to
+the whole saved dashboard. The authenticated Grafana API resolves the actual
+UID and title. Unsaved edits must be saved before sharing.
 
-The panel-menu extension receives dashboard metadata from Grafana. Before
-sharing, the frontend fetches the complete dashboard definition from
-Grafana's authenticated `/api/dashboards/uid/{uid}` endpoint. The backend
-then removes instance IDs, replaces DIL datasource references with the
-portable `${DIL_DATASOURCE}` placeholder, discovers DIL asset URNs in query
-models, and can either return the document or publish it to the configured
-connector endpoint. Connector credentials are encrypted app settings and are
-never returned to the browser.
+Example export:
 
-The `integrity.dashboard` value in the exported JSON is a SHA-256 checksum; it
-is not the Grafana dashboard UID. Configure the data source or Grafana offer
-with the actual UID from the dashboard URL (`/d/<uid>/...`).
+```json
+{
+  "type": "GrafanaDashboardReference",
+  "title": "Weatherstation",
+  "dataAddress": {
+    "type": "GrafanaDashboard",
+    "dashboardId": "weatherstation-uid"
+  }
+}
+```
 
-This version does not need a Grafana service account: the action receives the
-dashboard model that the authenticated Editor/Admin is already permitted to
-view. Anonymous access remains disabled. If a future retrieval flow reads
-dashboards independently of a signed-in user, use Grafana's managed plugin
-service account with dashboard/folder read scope instead of reusing the DIL
-Connector credential.
+Use `dataAddress` for the DIL Grafana data source. `dashboardId` is the actual
+Grafana UID, not the numeric database ID or an integrity checksum. No
+`panelIds` restriction is emitted, so the reference covers all dashboard
+panels supported by the provider adapter.
+
+Grafana URL and service-account credentials remain in provider dataplane
+configuration. This reference contains no dashboard body, panel queries,
+annotations, credentials, or checksum.
+
+Download returns this reference; Publish sends the same document to the
+configured REST endpoint, which must support `GrafanaDashboardReference`.
+Publishing does not itself negotiate an agreement or initiate a transfer.
+This file is source configuration, not a dashboard import file. The consumer
+retrieves a dashboard definition through the authorized dataplane flow. The
+portable `GrafanaDashboard` response includes non-secret `dil` metadata for
+automatic datasource creation during import; consumer dataplane tokens remain
+in Grafana secure datasource settings.
+
+The app uses the signed-in user's Grafana session for dashboard lookup.
+The DIL publishing token remains in encrypted app settings and is used only
+by the backend. Anonymous access is not required.

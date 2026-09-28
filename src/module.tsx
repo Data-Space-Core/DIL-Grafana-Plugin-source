@@ -3,11 +3,93 @@ import { DataSourcePlugin, DataQuery, DataSourceJsonData, DataSourceInstanceSett
 import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
 import { Button, Input, Field, SecretInput, Alert, Select } from '@grafana/ui';
 
-interface Options extends DataSourceJsonData { connectorUrl: string; agreementId: string; datasetId: string; offerId: string; dashboardId: string; allowHttp?: boolean }
+interface Options extends DataSourceJsonData { connectorUrl: string; agreementId: string; datasetId: string; offerId: string; dashboardId: string; transferType?: string; allowHttp?: boolean }
 interface Secrets { connectorToken?: string }
 interface Query extends DataQuery { panelId: string; templateRef: string }
 interface Manifest { title: string; dashboardId: string; panels: Array<{id: number; title: string; type: string; queries: Array<{refId: string; panelId: string}>}> }
-interface SharedDashboard { type: string; title: string; dashboard: Record<string, unknown>; datasource: {pluginId: string; placeholder?: string}; requires?: {grafana?: string; plugin?: {id?: string; version?: string}}; integrity?: {algorithm?: string; dashboard?: string} }
+interface SharedDashboard {
+  type: string;
+  title: string;
+  dashboard: Record<string, unknown>;
+  datasource: {pluginId: string; placeholder?: string};
+  dil?: {agreementId?: string; datasetId?: string; offerId?: string; dashboardId?: string; transferType?: string};
+  requires?: {grafana?: string; plugin?: {id?: string; version?: string}};
+  integrity?: {algorithm?: string; dashboard?: string};
+}
+interface GrafanaDatasource { id?: number; uid?: string; name?: string; type?: string; access?: string; url?: string; jsonData?: Record<string, unknown>; secureJsonFields?: Record<string, boolean> }
+type ImportSettings = {
+  id?: number;
+  uid?: string;
+  jsonData: Options;
+  secureJsonData?: Secrets;
+  secureJsonFields?: Record<string, boolean>;
+};
+
+function importedDatasourceSettings(document: SharedDashboard, options: ImportSettings) {
+  const metadata = document.dil || {};
+  const connectorUrl = String(options.jsonData.connectorUrl || '').trim();
+  if (!connectorUrl) { throw new Error('Set the consumer dataplane URL in the DIL datasource configuration first.'); }
+  const agreementId = String(metadata.agreementId || options.jsonData.agreementId || '').trim();
+  const datasetId = String(metadata.datasetId || options.jsonData.datasetId || '').trim();
+  const offerId = String(metadata.offerId || options.jsonData.offerId || '').trim();
+  const dashboardId = String(metadata.dashboardId || options.jsonData.dashboardId || '').trim();
+  if (!agreementId || !datasetId || !offerId || !dashboardId) {
+    throw new Error('The shared dashboard does not contain complete DIL transfer metadata.');
+  }
+  return {
+    connectorUrl,
+    agreementId,
+    datasetId,
+    offerId,
+    dashboardId,
+    transferType: metadata.transferType || options.jsonData.transferType || 'grafana-dashboard',
+  };
+}
+
+async function findDatasource(name: string): Promise<GrafanaDatasource | undefined> {
+  try {
+    return await getBackendSrv().get<GrafanaDatasource>(`/api/datasources/name/${encodeURIComponent(name)}`);
+  } catch (reason) {
+    if ((reason as {status?: number})?.status === 404) { return undefined; }
+    throw reason;
+  }
+}
+
+async function ensureImportedDatasource(document: SharedDashboard, options: ImportSettings): Promise<string> {
+  const jsonData = importedDatasourceSettings(document, options);
+  const token = String(options.secureJsonData?.connectorToken || '').trim();
+  let existing: GrafanaDatasource | undefined;
+  if (options.uid) {
+    existing = await getBackendSrv().get<GrafanaDatasource>(`/api/datasources/uid/${encodeURIComponent(options.uid)}`);
+  } else {
+    const suffix = jsonData.agreementId.slice(0, 8);
+    existing = await findDatasource(`DIL: ${document.title} (${suffix})`);
+  }
+  if (existing?.type && existing.type !== 'dataspacelab-dil-datasource') {
+    throw new Error('A datasource with the generated dashboard name already exists and has a different type.');
+  }
+  const hasExistingToken = Boolean(existing?.secureJsonFields?.connectorToken) || Boolean(options.secureJsonFields?.connectorToken);
+  if (!token && !hasExistingToken) {
+    throw new Error('Enter and save a consumer dataplane token before importing this dashboard.');
+  }
+  const name = existing?.name || `DIL: ${document.title} (${jsonData.agreementId.slice(0, 8)})`;
+  const payload: Record<string, unknown> = {
+    name,
+    type: 'dataspacelab-dil-datasource',
+    access: 'proxy',
+    url: '',
+    jsonData,
+  };
+  if (token) { payload.secureJsonData = {connectorToken: token}; }
+  if (existing?.id !== undefined) { payload.id = existing.id; }
+  if (existing?.uid) { payload.uid = existing.uid; }
+  const saved = existing?.uid
+    ? await getBackendSrv().put<GrafanaDatasource>(`/api/datasources/uid/${encodeURIComponent(existing.uid)}`, payload)
+    : await getBackendSrv().post<GrafanaDatasource>('/api/datasources', payload);
+  const uid = saved.uid || existing?.uid;
+  if (!uid) { throw new Error('Grafana created the datasource without returning a UID.'); }
+  return uid;
+}
 class DataSource extends DataSourceWithBackend<Query, Options> {
   constructor(settings: DataSourceInstanceSettings<Options>) { super(settings); }
 }
@@ -35,11 +117,12 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
   const importSharedDocument = async (file?: File) => {
     setBusy(true); setError(''); setImportUrl('');
     try {
-      if (!file || !options.uid) { throw new Error('Save this datasource and select a DIL dashboard JSON file.'); }
+      if (!file) { throw new Error('Select a DIL dashboard JSON file.'); }
       const document = JSON.parse(await file.text()) as SharedDashboard;
       if (document.type !== 'GrafanaDashboard' || document.datasource?.pluginId !== 'dataspacelab-dil-datasource' || !document.dashboard) {
         throw new Error('The selected file is not a DIL GrafanaDashboard document.');
       }
+      const datasourceUid = await ensureImportedDatasource(document, options);
       if (document.integrity?.dashboard) {
         if (document.integrity.algorithm !== 'sha256') { throw new Error('The dashboard document uses an unsupported integrity algorithm.'); }
         const canonicalize = (value: unknown): unknown => Array.isArray(value) ? value.map(canonicalize) : value && typeof value === 'object'
@@ -54,13 +137,13 @@ function ConfigEditor({ options, onOptionsChange }: DataSourcePluginOptionsEdito
         if (value && typeof value === 'object') {
           return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, mapDatasource(child)]));
         }
-        return value === placeholder ? options.uid : value;
+        return value === placeholder ? datasourceUid : value;
       };
       const dashboard = mapDatasource(document.dashboard) as Record<string, unknown>;
       dashboard.id = null;
       delete dashboard.uid;
       delete dashboard.version;
-      const saved = await getBackendSrv().post('/api/dashboards/db', {dashboard, overwrite: false, message: 'Imported from a portable DIL dashboard document'});
+      const saved = await getBackendSrv().post('/api/dashboards/db', {dashboard, overwrite: false, message: `Imported from DIL datasource ${datasourceUid}`});
       setImportUrl(saved.url);
     } catch (e) { setError(e instanceof Error ? e.message : 'Shared dashboard import failed.'); }
     finally { setBusy(false); }

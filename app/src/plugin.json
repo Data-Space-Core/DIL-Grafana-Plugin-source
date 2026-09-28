@@ -36,7 +36,7 @@
     "author": {"name": "Data Space Lab"},
     "keywords": ["dataspace", "DIL", "dashboard"],
     "logos": {"small": "img/logo.svg", "large": "img/logo.svg"},
-    "version": "0.1.1",
+    "version": "0.1.2",
     "updated": "2026-09-28"
   },
   "dependencies": {

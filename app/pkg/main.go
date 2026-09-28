@@ -3,17 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -44,17 +40,12 @@ type sharingApp struct {
 
 type shareRequest struct {
 	Dashboard map[string]any `json:"dashboard"`
-	Assets    []string       `json:"assets"`
 }
 
 type sharedDocument struct {
-	Type       string         `json:"type"`
-	Title      string         `json:"title"`
-	Dashboard  map[string]any `json:"dashboard"`
-	Datasource map[string]any `json:"datasource"`
-	Assets     []string       `json:"assets"`
-	Requires   map[string]any `json:"requires"`
-	Integrity  map[string]any `json:"integrity"`
+	Type        string            `json:"type"`
+	Title       string            `json:"title"`
+	DataAddress map[string]string `json:"dataAddress"`
 }
 
 func newApp(_ context.Context, settings backend.AppInstanceSettings) (instancemgmt.Instance, error) {
@@ -96,7 +87,7 @@ func (a *sharingApp) CallResource(ctx context.Context, req *backend.CallResource
 	if err := decoder.Decode(&input); err != nil || len(input.Dashboard) == 0 {
 		return sendJSON(sender, http.StatusBadRequest, map[string]string{"message": "valid dashboard JSON is required"}, nil)
 	}
-	document, err := makePortable(input)
+	document, err := makeReference(input)
 	if err != nil {
 		return sendJSON(sender, http.StatusBadRequest, map[string]string{"message": err.Error()}, nil)
 	}
@@ -121,7 +112,7 @@ func (a *sharingApp) publish(ctx context.Context, document sharedDocument, sende
 	}
 	request.Header.Set("Authorization", "Bearer "+a.token)
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", appID+"/0.1.0")
+	request.Header.Set("User-Agent", appID+"/0.1.2")
 	response, err := a.client.Do(request)
 	if err != nil {
 		return sendJSON(sender, http.StatusBadGateway, map[string]string{"message": "DIL Connector is unavailable"}, nil)
@@ -155,98 +146,20 @@ func validateEndpoint(raw string, allowHTTP bool) (string, error) {
 	return parsed.String(), nil
 }
 
-func makePortable(input shareRequest) (sharedDocument, error) {
-	encoded, err := json.Marshal(input.Dashboard)
-	if err != nil {
-		return sharedDocument{}, errors.New("dashboard cannot be encoded")
-	}
-	var dashboard map[string]any
-	if err = json.Unmarshal(encoded, &dashboard); err != nil {
-		return sharedDocument{}, errors.New("dashboard cannot be copied")
-	}
-	title, _ := dashboard["title"].(string)
+func makeReference(input shareRequest) (sharedDocument, error) {
+	title, _ := input.Dashboard["title"].(string)
+	uid, _ := input.Dashboard["uid"].(string)
 	if strings.TrimSpace(title) == "" {
 		return sharedDocument{}, errors.New("dashboard title is required")
 	}
-	panels, ok := dashboard["panels"].([]any)
-	if !ok || len(panels) == 0 {
-		return sharedDocument{}, errors.New("complete dashboard JSON with at least one panel is required")
+	if !regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`).MatchString(uid) {
+		return sharedDocument{}, errors.New("saved Grafana dashboard UID is required; do not use a checksum or numeric ID")
 	}
-	delete(dashboard, "id")
-	delete(dashboard, "uid")
-	delete(dashboard, "version")
-	dashboard["id"] = nil
-
-	assets := make(map[string]struct{})
-	for _, asset := range input.Assets {
-		asset = strings.TrimSpace(asset)
-		if !assetPattern.MatchString(asset) {
-			return sharedDocument{}, fmt.Errorf("invalid DIL asset identifier: %s", asset)
-		}
-		assets[asset] = struct{}{}
-	}
-	portableWalk(dashboard, assets)
-	assetList := make([]string, 0, len(assets))
-	for asset := range assets {
-		assetList = append(assetList, asset)
-	}
-	sort.Strings(assetList)
-
-	canonical, err := canonicalJSON(dashboard)
-	if err != nil {
-		return sharedDocument{}, errors.New("dashboard cannot be canonicalized")
-	}
-	digest := sha256.Sum256(canonical)
 	return sharedDocument{
-		Type:      "GrafanaDashboard",
-		Title:     title,
-		Dashboard: dashboard,
-		Datasource: map[string]any{
-			"pluginId":    datasourcePluginID,
-			"placeholder": portableDatasource,
-		},
-		Assets: assetList,
-		Requires: map[string]any{
-			"grafana": ">=13.0.1",
-			"plugin":  map[string]string{"id": datasourcePluginID, "version": ">=0.3.0"},
-		},
-		Integrity: map[string]any{"algorithm": "sha256", "dashboard": hex.EncodeToString(digest[:])},
+		Type:        "GrafanaDashboardReference",
+		Title:       title,
+		DataAddress: map[string]string{"type": "GrafanaDashboard", "dashboardId": uid},
 	}, nil
-}
-
-func canonicalJSON(value any) ([]byte, error) {
-	var output bytes.Buffer
-	encoder := json.NewEncoder(&output)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return nil, err
-	}
-	return bytes.TrimSuffix(output.Bytes(), []byte("\n")), nil
-}
-
-func portableWalk(value any, assets map[string]struct{}) {
-	switch current := value.(type) {
-	case map[string]any:
-		if datasource, ok := current["datasource"].(map[string]any); ok {
-			if datasource["type"] == datasourcePluginID {
-				current["datasource"] = map[string]any{"type": datasourcePluginID, "uid": portableDatasource}
-			}
-		}
-		for key, child := range current {
-			if (key == "assetId" || key == "datasetId") && assetPattern.MatchString(fmt.Sprint(child)) {
-				assets[fmt.Sprint(child)] = struct{}{}
-			}
-			portableWalk(child, assets)
-		}
-	case []any:
-		for _, child := range current {
-			portableWalk(child, assets)
-		}
-	case string:
-		if assetPattern.MatchString(current) {
-			assets[current] = struct{}{}
-		}
-	}
 }
 
 func sendJSON(sender backend.CallResourceResponseSender, status int, value any, extra map[string][]string) error {

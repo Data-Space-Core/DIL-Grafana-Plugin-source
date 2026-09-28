@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestMakePortableRemovesInstanceIdentityAndMapsDILDatasources(t *testing.T) {
+func TestReferencePreservesUIDAndExcludesDashboardBody(t *testing.T) {
 	input := shareRequest{Dashboard: map[string]any{
 		"id": float64(42), "uid": "provider-only", "version": float64(7), "title": "Portable & safe",
 		"panels": []any{map[string]any{
@@ -13,30 +13,27 @@ func TestMakePortableRemovesInstanceIdentityAndMapsDILDatasources(t *testing.T) 
 			"targets":    []any{map[string]any{"datasetId": "urn:dil:asset:temperature"}},
 		}},
 	}}
-	document, err := makePortable(input)
+	document, err := makeReference(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.Dashboard["id"] != nil || document.Dashboard["uid"] != nil || document.Dashboard["version"] != nil {
+	if document.DataAddress["dashboardId"] != "provider-only" {
 		t.Fatal("provider dashboard identity leaked into portable document")
 	}
-	if len(document.Assets) != 1 || document.Assets[0] != "urn:dil:asset:temperature" {
-		t.Fatalf("asset discovery failed: %#v", document.Assets)
-	}
-	encoded, _ := json.Marshal(document.Dashboard)
-	if string(encoded) == "" || !contains(string(encoded), portableDatasource) || contains(string(encoded), "provider-uid") {
+	encoded, _ := json.Marshal(document)
+	if string(encoded) == "" || !contains(string(encoded), `"dashboardId":"provider-only"`) || contains(string(encoded), "provider-uid") || contains(string(encoded), `"panels"`) || contains(string(encoded), `"integrity"`) {
 		t.Fatalf("datasource was not made portable: %s", encoded)
 	}
 }
 
-func TestMakePortableRejectsInvalidAssetsAndUntitledDashboard(t *testing.T) {
-	if _, err := makePortable(shareRequest{Dashboard: map[string]any{"title": "ok"}, Assets: []string{"https://not-an-asset"}}); err == nil {
+func TestReferenceRejectsMissingUIDAndTitle(t *testing.T) {
+	if _, err := makeReference(shareRequest{Dashboard: map[string]any{"title": "ok"}}); err == nil {
 		t.Fatal("invalid asset accepted")
 	}
-	if _, err := makePortable(shareRequest{Dashboard: map[string]any{"panels": []any{}}}); err == nil {
+	if _, err := makeReference(shareRequest{Dashboard: map[string]any{"panels": []any{}}}); err == nil {
 		t.Fatal("untitled dashboard accepted")
 	}
-	if _, err := makePortable(shareRequest{Dashboard: map[string]any{"title": "metadata only"}}); err == nil {
+	if _, err := makeReference(shareRequest{Dashboard: map[string]any{"title": "metadata only"}}); err == nil {
 		t.Fatal("metadata-only dashboard accepted")
 	}
 }
